@@ -32,7 +32,6 @@
 
 import json
 import readline
-import requests
 import signal
 import sys
 import time
