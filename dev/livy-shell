@@ -52,11 +52,11 @@ class LiteralDict(dict):
     return name
 
 
-def request(method, uri, body):
+def request(method, uri, body, params={}):
   kwargs = { 'headers': { 'Content-Type' : 'application/json', 'X-Requested-By': 'livy' } }
   if body:
     kwargs['json'] = body
-  resp = requests.request(method.upper(), urlparse.urljoin(url.geturl(), uri), auth=auth, **kwargs)
+  resp = requests.request(method.upper(), urlparse.urljoin(url.geturl(), uri), auth=auth, params=params, **kwargs)
   if resp.status_code >= requests.codes.bad_request:
     if resp.status_code == requests.codes.unauthorized:
       message("ERROR: Unauthorized response received from Livy. Please ensure that Kerberos is enabled " +
@@ -69,8 +69,8 @@ def request(method, uri, body):
   return None
 
 
-def get(uri):
-  return request('GET', uri, None)
+def get(uri, params={}):
+  return request('GET', uri, None, params=params)
 
 
 def post(uri, body):
@@ -79,6 +79,15 @@ def post(uri, body):
 
 def delete(uri):
   return request('DELETE', uri, None)
+
+
+def get_logs(sid):
+  global fromOpt
+  logs = get("/sessions/%d/log" % (sid, ), params={'from': fromOpt, 'size': -1})
+  for line in logs['log']:
+    if line and "YARN Diagnostics:" not in line and "stdout:" not in line and "stderr:" not in line:
+      fromOpt += 1
+      message(line)
 
 
 def create_session(extra_args=[]):
@@ -92,18 +101,22 @@ def create_session(extra_args=[]):
   return post("/sessions", request)
 
 
-def wait_for_idle(sid):
+def wait_for_idle(sid, enable_logging):
   session = get("/sessions/%d" % (sid, ))
   while session['state'] == 'starting':
-    message("Session not ready yet (%s)", session['state'])
-    time.sleep(5)
+    if enable_logging:
+      time.sleep(2)
+      get_logs(sid)
+    else:
+      message("Session not ready yet (%s)", session['state'])
+      time.sleep(5)
     session = get("/sessions/%d" % (sid, ))
 
   if session['state'] != 'idle':
     raise Exception, "Session failed to start."
 
 
-def monitor_statement(sid, s):
+def monitor_statement(sid, s, enable_logging):
   cnt = 0
   while True:
     state = s['state']
@@ -131,7 +144,9 @@ def monitor_statement(sid, s):
       message("%s", s['error'])
       break
     else:
-      if cnt == 10:
+      if enable_logging:
+        get_logs(sid)
+      elif cnt == 10:
         message("(waiting for result...)")
         cnt = 0
       else:
@@ -140,7 +155,7 @@ def monitor_statement(sid, s):
       s = get("/sessions/%d/statements/%s" % (sid, s['id']))
 
 
-def run_shell(sid, session_kind):
+def run_shell(sid, session_kind, enable_logging):
   prompt = "{0} ({1}) > ".format(session_kind, sid)
   def ctrl_c_handler(signal, frame):
     message("\nPlease type quit() to exit the livy shell.")
@@ -156,7 +171,7 @@ def run_shell(sid, session_kind):
       continue
 
     statement = post("/sessions/%d/statements" % (sid, ), { 'code' : cmd })
-    monitor_statement(sid, statement)
+    monitor_statement(sid, statement, enable_logging)
 
 
 def valid_extra_arg(s):
@@ -179,6 +194,7 @@ args = parser.parse_args()
 url = urlparse.urlparse(args.livy_url)
 sid = -1
 auth = None
+fromOpt = 0
 if args.enable_kerberos:
   try:
     from requests_kerberos import HTTPKerberosAuth
@@ -192,9 +208,9 @@ try:
   session = create_session(args.option)
   sid = int(session['id'])
   message("New session (id = %d, kind = %s), waiting for idle state...", sid, session['kind'])
-  wait_for_idle(sid)
+  wait_for_idle(sid, args.enable_logging)
   message("Session ready.")
-  run_shell(sid, session.get('kind', 'spark'))
+  run_shell(sid, session.get('kind', 'spark'), args.enable_logging)
 except EOFError:
   pass
 finally:
