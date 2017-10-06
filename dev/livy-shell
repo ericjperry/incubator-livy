@@ -171,7 +171,9 @@ def valid_extra_arg(s):
 parser = argparse.ArgumentParser(description="A REPL for connecting to Livy.")
 parser.add_argument("livy_url", type=str, help="The full URL to the Livy server.")
 parser.add_argument("--enable_kerberos", action="store_true", help="Enable kerberos authentication when communicating with Livy.")
-parser.add_argument("--option", type=valid_extra_arg, action="append", default=[], help="Additional options to send when creating the session in Livy. Should be in the form 'key=value', for example --option kind=pyspark.")
+parser.add_argument("--enable_logging", action="store_true", help="Show session logs in the terminal rather than only in the Livy UI.")
+parser.add_argument("--option", type=valid_extra_arg, action="append", default=[],
+  help="Additional options to send when creating the session in Livy. Should be in the form 'key=value', for example --option kind=pyspark.")
 args = parser.parse_args()
 
 url = urlparse.urlparse(args.livy_url)
