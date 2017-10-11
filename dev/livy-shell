@@ -42,6 +42,9 @@ class ControlCInterrupt(Exception):
   pass
 
 
+class ControlCInterrupt(Exception):
+  pass
+
 def check(condition, msg, *args):
   if not condition:
     if args:
